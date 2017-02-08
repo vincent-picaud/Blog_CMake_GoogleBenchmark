@@ -1,0 +1,586 @@
+#+BLOG: wordpress
+#+POSTID: 239
+#+DATE: [2016-05-22 Sun 11:34]
+#+OPTIONS: toc:nil num:nil todo:nil pri:nil tags:nil ^:nil
+#+CATEGORY: Cpp, CMake
+#+TAGS:
+#+DESCRIPTION:
+#+TITLE: CMake + Google micro-benchmarking
+
+* Introduction
+This [[https://pixorblog.wordpress.com/2016/05/22/cmake-google-micro-benchmarking/][post]] describes a minimal example showing how to use *CMake* and the [[https://github.com/google/benchmark][google micro-benchmarking library]].
+
+We use the cmake *download_project* function that can be found here [[https://github.com/Crascit/DownloadProject/][github.com/Crascit/DownloadProject/]].
+
+The final project struture will be:
+#+BEGIN_SRC txt
+.
+├── bench
+│   ├── CMakeLists.txt
+│   └── one_example.cpp
+├── cmake
+│   ├── ConfigGBench.cmake
+│   ├── ConfigSafeGuards.cmake
+│   ├── DownloadProject.cmake
+│   └── DownloadProject.CMakeLists.cmake.in
+└── CMakeLists.txt
+#+END_SRC
+
+For your convenience, all the code can be found on [[https://github.com/vincent-picaud/Blog_CMake_GoogleBenchmark][GitHub]]. You can
+easily clone it for tests.
+
+* Involved files
+
+The master *CMakeLists.txt* code is:
+#+ATTR_WP: :syntaxhl light=true
+#+NAME: Master_CMakeList
+#+BEGIN_SRC cmake
+cmake_minimum_required(VERSION 3.0)
+project(Benchmarking_Demo LANGUAGES CXX)
+
+# Location of additional cmake modules
+#
+set(CMAKE_MODULE_PATH
+    ${CMAKE_MODULE_PATH}
+    ${PROJECT_SOURCE_DIR}/cmake
+    )
+
+# Guard against in-source builds and bad build-type strings
+#
+include(ConfigSafeGuards)
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# This include is required if you want 
+# to use CTest framework for you benchmarks with add_test()
+#
+include(CTest) 
+
+# If you want to self-test benchmark lib too, turn me ON
+#
+set(BENCHMARK_ENABLE_TESTING OFF)
+
+# Configure google micro benchmark
+#
+
+# c++11 is required
+#
+if((CMAKE_CXX_COMPILER_ID MATCHES GNU) OR (CMAKE_CXX_COMPILER_ID MATCHES Clang))
+   set(CMAKE_CXX_FLAGS         "${CMAKE_CXX_FLAGS} -std=c++11")
+   set(CMAKE_CXX_FLAGS_DEBUG   "-O0 -g3")
+   set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+endif()
+
+include(ConfigGBench)
+
+add_subdirectory(${PROJECT_SOURCE_DIR}/bench/)
+#+END_SRC
+
+it includes *include(ConfigGBench)* in charge of downloading and configuring the *googlebenchmark* subproject.
+
+#+ATTR_WP: :syntaxhl light=true
+#+NAME: ConfigGBench
+#+BEGIN_SRC cmake
+# Adapted from https://github.com/Crascit/DownloadProject/blob/master/CMakeLists.txt
+#
+# CAVEAT: use DownloadProject.cmake
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#
+if (CMAKE_VERSION VERSION_LESS 3.2)
+    set(UPDATE_DISCONNECTED_IF_AVAILABLE "")
+else()
+    set(UPDATE_DISCONNECTED_IF_AVAILABLE "UPDATE_DISCONNECTED 1")
+endif()
+
+include(DownloadProject)
+download_project(PROJ                googlebenchmark
+                 GIT_REPOSITORY      https://github.com/google/benchmark.git
+                 GIT_TAG             master
+                 ${UPDATE_DISCONNECTED_IF_AVAILABLE}
+)
+
+add_subdirectory(${googlebenchmark_SOURCE_DIR} ${googlebenchmark_BINARY_DIR})
+
+include_directories("${googlebenchmark_SOURCE_DIR}/include")
+#+END_SRC
+
+Now we have to define the *CMakeLists.txt* file of the *./bench* directory
+
+#+ATTR_WP: :syntaxhl light=true
+#+NAME: Bench_CMakeLists
+#+BEGIN_SRC cmake
+find_package(Threads REQUIRED)
+
+#~~~~~~~~~~~~~~~~
+
+file(GLOB_RECURSE ALL_BENCH_CPP *.cpp)
+
+foreach(ONE_BENCH_CPP ${ALL_BENCH_CPP})
+
+   get_filename_component(ONE_BENCH_EXEC ${ONE_BENCH_CPP} NAME_WE)
+
+   # Avoid name collision 
+   set(TARGET_NAME Bench_${ONE_BENCH_EXEC})
+
+   add_executable(${TARGET_NAME} ${ONE_BENCH_CPP})
+   set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME ${ONE_BENCH_EXEC}) 
+   target_link_libraries(${TARGET_NAME} 
+
+# If required, you can add your project library here
+# ...
+
+	 benchmark
+     ${CMAKE_THREAD_LIBS_INIT})
+
+   # If you want to run benchmarks with the "make test" command, uncomment me
+   add_test(${TARGET_NAME} ${ONE_BENCH_EXEC})
+endforeach()
+#+END_SRC
+
+Finally we also need a small stuff to bench
+
+#+ATTR_WP: :syntaxhl light=true
+#+NAME: CppBenchExample
+#+BEGIN_SRC c++
+#include "benchmark/benchmark_api.h"
+#include <set>
+#include <vector>
+
+static void BM_VectorInsert(benchmark::State &state) {
+
+  while (state.KeepRunning()) {
+    std::vector<int> insertion_test;
+    for (int i = 0, i_end = state.range_x(); i < i_end; i++) {
+      insertion_test.push_back(i);
+    }
+  }
+}
+
+// Register the function as a benchmark
+BENCHMARK(BM_VectorInsert)->Range(8, 8 << 10);
+
+//~~~~~~~~~~~~~~~~
+
+// Define another benchmark
+static void BM_SetInsert(benchmark::State &state) {
+
+  while (state.KeepRunning()) {
+    std::set<int> insertion_test;
+    for (int i = 0, i_end = state.range_x(); i < i_end; i++) {
+      insertion_test.insert(i);
+    }
+  }
+}
+BENCHMARK(BM_SetInsert)->Range(8, 8 << 10);
+
+BENCHMARK_MAIN();
+#+END_SRC
+
+You can go to the [[https://github.com/google/benchmark][google micro-benchmarking library]] to see other examples.
+
+* Check that its works
+
+Do the usual:
+#+BEGIN_SRC sh
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=Release  ..
+make 
+make test
+#+END_SRC
+
+it should work... you get something like:
+#+BEGIN_SRC txt
+Running tests...
+Test project /home/picaud/GitLab/Reports/Blog/Bench/code/build
+    Start 1: Bench_one_example
+1/1 Test #1: Bench_one_example ................   Passed    1.99 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   1.99 sec
+#+END_SRC
+
+The result is in the *Testing/Temporary/LastTest.log* file and looks like:
+#+BEGIN_SRC txt
+Start testing: May 22 19:37 CEST
+----------------------------------------------------------
+1/1 Testing: Bench_one_example
+1/1 Test: Bench_one_example
+Command: "/home/picaud/GitLab/Reports/Blog/Bench/code/build/bench/one_example"
+Directory: /home/picaud/GitLab/Reports/Blog/Bench/code/build/bench
+"Bench_one_example" start time: May 22 19:37 CEST
+Output:
+----------------------------------------------------------
+Run on (4 X 2533 MHz CPU s)
+2016-05-22 19:37:35
+***WARNING*** CPU scaling is enabled, the benchmark real time measurements may be noisy and will incur extra overhead.
+***WARNING*** Library was built as DEBUG. Timings may be affected.
+Benchmark                    Time           CPU Iterations
+----------------------------------------------------------
+BM_VectorInsert/8         1541 ns       1542 ns     448718
+BM_VectorInsert/64        3626 ns       3621 ns     182292
+BM_VectorInsert/512      13501 ns      13458 ns      54687
+BM_VectorInsert/4k       75578 ns      75562 ns       9211
+BM_VectorInsert/8k      146739 ns     146472 ns       4861
+BM_SetInsert/8            3024 ns       3017 ns     233333
+BM_SetInsert/64          31640 ns      31629 ns      23649
+BM_SetInsert/512        303617 ns     303472 ns       2333
+BM_SetInsert/4k        2954728 ns    2949153 ns        236
+BM_SetInsert/8k        6345872 ns    6311927 ns        109
+
+<end of output>
+Test time =   9.45 sec
+----------------------------------------------------------
+Test Passed.
+"Bench_one_example" end time: May 22 19:37 CEST
+"Bench_one_example" time elapsed: 00:00:09
+----------------------------------------------------------
+
+End testing: May 22 19:37 CEST
+#+END_SRC
+
+Other wise you can execute each benchmark individually
+#+BEGIN_SRC txt
+/one_example --benchmark_format=json
+#+END_SRC
+
+you get, on your terminal:
+#+BEGIN_SRC txt
+{
+  "context": {
+    "date": "2016-05-22 19:43:47",
+    "num_cpus": 4,
+    "mhz_per_cpu": 2533,
+    "cpu_scaling_enabled": false,
+    "library_build_type": "release"
+  },
+  "benchmarks": [
+    {
+      "name": "BM_VectorInsert/8",
+      "iterations": 2966102,
+      "real_time": 226,
+      "cpu_time": 227,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_VectorInsert/64",
+      "iterations": 972222,
+      "real_time": 605,
+      "cpu_time": 605,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_VectorInsert/512",
+      "iterations": 380435,
+      "real_time": 1795,
+      "cpu_time": 1798,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_VectorInsert/4k",
+      "iterations": 97222,
+      "real_time": 7235,
+      "cpu_time": 7200,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_VectorInsert/8k",
+      "iterations": 51471,
+      "real_time": 13302,
+      "cpu_time": 13289,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_SetInsert/8",
+      "iterations": 1093750,
+      "real_time": 581,
+      "cpu_time": 578,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_SetInsert/64",
+      "iterations": 109375,
+      "real_time": 5904,
+      "cpu_time": 5925,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_SetInsert/512",
+      "iterations": 11667,
+      "real_time": 52307,
+      "cpu_time": 52113,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_SetInsert/4k",
+      "iterations": 1346,
+      "real_time": 499965,
+      "cpu_time": 499257,
+      "time_unit": "ns"
+    },
+    {
+      "name": "BM_SetInsert/8k",
+      "iterations": 700,
+      "real_time": 999270,
+      "cpu_time": 994286,
+      "time_unit": "ns"
+    }
+  ]
+}
+#+END_SRC
+
+* A remark concerning CPU
+
+During benchmark you must use *performance* mode for your CPU. To setup your *cpu governance mode* you can do as follow.
+
+Tested on *Debian*, source of information [[https://access.redhat.com/documentation/en-US/Red_Hat_Enterprise_Linux/7/html/Power_Management_Guide/cpufreq_governors.html][here]].
+
+
+#+BEGIN_SRC sh
+apt-get install linux-cpupower
+#+END_SRC
+
+Turns on performance mode (in *su* mode)
+
+#+BEGIN_SRC sh
+cpupower frequency-set --governor performance
+#+END_SRC
+
+After benchmarking your software you can go back to the more conservative option:
+
+#+BEGIN_SRC sh
+cpupower frequency-set --governor ondemand
+#+END_SRC
+
+A nice thing is the *google benchmark* warns you
+
+
+#+BEGIN_SRC txt
+***WARNING*** CPU scaling is enabled, the benchmark real time measurements may be noisy and will incur extra overhead.
+#+END_SRC
+
+if you are not using the right cpu mode.
+
+It also warns you if you are in debug mode:
+
+#+BEGIN_SRC txt
+***WARNING*** Library was built as DEBUG. Timings may be affected.
+#+END_SRC
+
+* Code
+
+Code can be found [[https://github.com/vincent-picaud/DropBoxRepository/tree/master/Blog/Bench][here]]
+
+#+ATTR_WP: :syntaxhl light=true
+#+BEGIN_SRC cmake :tangle yes :tangle ./code/CMakeLists.txt :mkdirp yes :tangle-mode (identity #o666) :noweb yes :exports none
+<<Master_CMakeList>>
+#+END_SRC
+
+#+ATTR_WP: :syntaxhl light=true
+#+BEGIN_SRC cmake :tangle yes :tangle ./code/cmake/ConfigSafeGuards.cmake :mkdirp yes :tangle-mode (identity #o666) :noweb yes :exports none 
+# Adapted from: https://github.com/bast/cmake-example/tree/master/cmake
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# guard against in-source builds
+if(${CMAKE_CURRENT_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_BINARY_DIR})
+    message(FATAL_ERROR "In-source builds not allowed. Please make a new directory (called a build directory) and run CMake from there.")
+endif()
+
+# guard against bad build-type strings
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
+string(TOLOWER "${CMAKE_BUILD_TYPE}" cmake_build_type_tolower)
+string(TOUPPER "${CMAKE_BUILD_TYPE}" cmake_build_type_toupper)
+if(    NOT cmake_build_type_tolower STREQUAL "debug"
+   AND NOT cmake_build_type_tolower STREQUAL "release"
+   AND NOT cmake_build_type_tolower STREQUAL "profile"
+   AND NOT cmake_build_type_tolower STREQUAL "relwithdebinfo")
+      message(FATAL_ERROR "Unknown build type \"${CMAKE_BUILD_TYPE}\". Allowed values are Debug, Release, Profile, RelWithDebInfo (case-insensitive).")
+endif()
+#+END_SRC
+
+#+ATTR_WP: :syntaxhl light=true
+#+BEGIN_SRC cmake :tangle yes :tangle ./code/cmake/ConfigGBench.cmake :mkdirp yes :tangle-mode (identity #o666) :noweb yes :exports none
+<<ConfigGBench>>
+#+END_SRC
+
+#+ATTR_WP: :syntaxhl light=true
+#+BEGIN_SRC cmake :tangle yes :tangle ./code/bench/CMakeLists.txt :mkdirp yes :tangle-mode (identity #o666) :noweb yes :exports none
+<<Bench_CMakeLists>>
+#+END_SRC
+
+#+ATTR_WP: :syntaxhl light=true
+#+BEGIN_SRC c++ :tangle yes :tangle ./code/bench/one_example.cpp :mkdirp yes :tangle-mode (identity #o666) :noweb yes :exports none
+<<CppBenchExample>>
+#+END_SRC
+
+#+ATTR_WP: :syntaxhl light=true
+#+BEGIN_SRC cmake :tangle yes :tangle ./code/cmake/DownloadProject.cmake :mkdirp yes :tangle-mode (identity #o666) :noweb yes :exports none
+# From https://github.com/Crascit/DownloadProject
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# MODULE:   DownloadProject
+#
+# PROVIDES:
+#   download_project( PROJ projectName
+#                    [PREFIX prefixDir]
+#                    [DOWNLOAD_DIR downloadDir]
+#                    [SOURCE_DIR srcDir]
+#                    [BINARY_DIR binDir]
+#                    [QUIET]
+#                    ...
+#   )
+#
+#       Provides the ability to download and unpack a tarball, zip file, git repository,
+#       etc. at configure time (i.e. when the cmake command is run). How the downloaded
+#       and unpacked contents are used is up to the caller, but the motivating case is
+#       to download source code which can then be included directly in the build with
+#       add_subdirectory() after the call to download_project(). Source and build
+#       directories are set up with this in mind.
+#
+#       The PROJ argument is required. The projectName value will be used to construct
+#       the following variables upon exit (obviously replace projectName with its actual
+#       value):
+#
+#           projectName_SOURCE_DIR
+#           projectName_BINARY_DIR
+#
+#       The SOURCE_DIR and BINARY_DIR arguments are optional and would not typically
+#       need to be provided. They can be specified if you want the downloaded source
+#       and build directories to be located in a specific place. The contents of
+#       projectName_SOURCE_DIR and projectName_BINARY_DIR will be populated with the
+#       locations used whether you provide SOURCE_DIR/BINARY_DIR or not.
+#
+#       The DOWNLOAD_DIR argument does not normally need to be set. It controls the
+#       location of the temporary CMake build used to perform the download.
+#
+#       The PREFIX argument can be provided to change the base location of the default
+#       values of DOWNLOAD_DIR, SOURCE_DIR and BINARY_DIR. If all of those three arguments
+#       are provided, then PREFIX will have no effect. The default value for PREFIX is
+#       CMAKE_BINARY_DIR.
+#
+#       The QUIET option can be given if you do not want to show the output associated
+#       with downloading the specified project.
+#
+#       In addition to the above, any other options are passed through unmodified to
+#       ExternalProject_Add() to perform the actual download, patch and update steps.
+#       The following ExternalProject_Add() options are explicitly prohibited (they
+#       are reserved for use by the download_project() command):
+#
+#           CONFIGURE_COMMAND
+#           BUILD_COMMAND
+#           INSTALL_COMMAND
+#           TEST_COMMAND
+#
+#       Only those ExternalProject_Add() arguments which relate to downloading, patching
+#       and updating of the project sources are intended to be used. Also note that at
+#       least one set of download-related arguments are required.
+#
+#       If using CMake 3.2 or later, the UPDATE_DISCONNECTED option can be used to
+#       prevent a check at the remote end for changes every time CMake is run
+#       after the first successful download. See the documentation of the ExternalProject
+#       module for more information. It is likely you will want to use this option if it
+#       is available to you.
+#
+# EXAMPLE USAGE:
+#
+#   include(download_project.cmake)
+#   download_project(PROJ                googletest
+#                    GIT_REPOSITORY      https://github.com/google/googletest.git
+#                    GIT_TAG             master
+#                    UPDATE_DISCONNECTED 1
+#                    QUIET
+#   )
+#
+#   add_subdirectory(${googletest_SOURCE_DIR} ${googletest_BINARY_DIR})
+#
+#========================================================================================
+
+
+set(_DownloadProjectDir "${CMAKE_CURRENT_LIST_DIR}")
+
+include(CMakeParseArguments)
+
+function(download_project)
+
+    set(options QUIET)
+    set(oneValueArgs
+        PROJ
+        PREFIX
+        DOWNLOAD_DIR
+        SOURCE_DIR
+        BINARY_DIR
+        # Prevent the following from being passed through
+        CONFIGURE_COMMAND
+        BUILD_COMMAND
+        INSTALL_COMMAND
+        TEST_COMMAND
+    )
+    set(multiValueArgs "")
+
+    cmake_parse_arguments(DL_ARGS "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+
+    # Hide output if requested
+    if (DL_ARGS_QUIET)
+        set(OUTPUT_QUIET "OUTPUT_QUIET")
+    else()
+        unset(OUTPUT_QUIET)
+        message(STATUS "Downloading/updating ${DL_ARGS_PROJ}")
+    endif()
+
+    # Set up where we will put our temporary CMakeLists.txt file and also
+    # the base point below which the default source and binary dirs will be
+    if (NOT DL_ARGS_PREFIX)
+        set(DL_ARGS_PREFIX "${CMAKE_BINARY_DIR}")
+    endif()
+    if (NOT DL_ARGS_DOWNLOAD_DIR)
+        set(DL_ARGS_DOWNLOAD_DIR "${DL_ARGS_PREFIX}/${DL_ARGS_PROJ}-download")
+    endif()
+
+    # Ensure the caller can know where to find the source and build directories
+    if (NOT DL_ARGS_SOURCE_DIR)
+        set(DL_ARGS_SOURCE_DIR "${DL_ARGS_PREFIX}/${DL_ARGS_PROJ}-src")
+    endif()
+    if (NOT DL_ARGS_BINARY_DIR)
+        set(DL_ARGS_BINARY_DIR "${DL_ARGS_PREFIX}/${DL_ARGS_PROJ}-build")
+    endif()
+    set(${DL_ARGS_PROJ}_SOURCE_DIR "${DL_ARGS_SOURCE_DIR}" PARENT_SCOPE)
+    set(${DL_ARGS_PROJ}_BINARY_DIR "${DL_ARGS_BINARY_DIR}" PARENT_SCOPE)
+
+    # Create and build a separate CMake project to carry out the download.
+    # If we've already previously done these steps, they will not cause
+    # anything to be updated, so extra rebuilds of the project won't occur.
+    configure_file("${_DownloadProjectDir}/DownloadProject.CMakeLists.cmake.in"
+                   "${DL_ARGS_DOWNLOAD_DIR}/CMakeLists.txt")
+    execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+                    ${OUTPUT_QUIET}
+                    WORKING_DIRECTORY "${DL_ARGS_DOWNLOAD_DIR}"
+    )
+    execute_process(COMMAND ${CMAKE_COMMAND} --build .
+                    ${OUTPUT_QUIET}
+                    WORKING_DIRECTORY "${DL_ARGS_DOWNLOAD_DIR}"
+    )
+
+endfunction()
+#+END_SRC
+
+#+ATTR_WP: :syntaxhl light=true
+#+BEGIN_SRC cmake :tangle yes :tangle ./code/cmake/DownloadProject.CMakeLists.cmake.in :mkdirp yes :tangle-mode (identity #o666) :noweb yes :exports none
+cmake_minimum_required(VERSION 2.8.2)
+
+project(${DL_ARGS_PROJ}-download NONE)
+
+include(ExternalProject)
+ExternalProject_Add(${DL_ARGS_PROJ}-download
+                    ${DL_ARGS_UNPARSED_ARGUMENTS}
+                    SOURCE_DIR          "${DL_ARGS_SOURCE_DIR}"
+                    BINARY_DIR          "${DL_ARGS_BINARY_DIR}"
+                    CONFIGURE_COMMAND   ""
+                    BUILD_COMMAND       ""
+                    INSTALL_COMMAND     ""
+                    TEST_COMMAND        ""
+)
+#+END_SRC
