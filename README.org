@@ -368,10 +368,6 @@ It also warns you if you are in debug mode:
 ***WARNING*** Library was built as DEBUG. Timings may be affected.
 #+END_SRC
 
-* Code
-
-Code can be found [[https://github.com/vincent-picaud/DropBoxRepository/tree/master/Blog/Bench][here]]
-
 #+ATTR_WP: :syntaxhl light=true
 #+BEGIN_SRC cmake :tangle yes :tangle ./code/CMakeLists.txt :mkdirp yes :tangle-mode (identity #o666) :noweb yes :exports none
 <<Master_CMakeList>>
