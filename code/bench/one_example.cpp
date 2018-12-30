@@ -6,7 +6,7 @@ static void BM_VectorInsert(benchmark::State &state) {
 
   while (state.KeepRunning()) {
     std::vector<int> insertion_test;
-    for (int i = 0, i_end = state.range_x(); i < i_end; i++) {
+    for (int i = 0, i_end = state.range(0); i < i_end; i++) {
       insertion_test.push_back(i);
     }
   }
@@ -22,7 +22,7 @@ static void BM_SetInsert(benchmark::State &state) {
 
   while (state.KeepRunning()) {
     std::set<int> insertion_test;
-    for (int i = 0, i_end = state.range_x(); i < i_end; i++) {
+    for (int i = 0, i_end = state.range(0); i < i_end; i++) {
       insertion_test.insert(i);
     }
   }
