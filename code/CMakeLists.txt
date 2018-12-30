@@ -14,7 +14,7 @@ include(ConfigSafeGuards)
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-# This include is required if you want 
+  # This include is required if you want 
 # to use CTest framework for you benchmarks with add_test()
 #
 include(CTest) 
@@ -25,6 +25,10 @@ set(BENCHMARK_ENABLE_TESTING OFF)
 
 # Configure google micro benchmark
 #
+
+# Fix dependency download
+# https://github.com/google/benchmark/issues/564
+set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON)
 
 # c++11 is required
 #

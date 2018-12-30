@@ -7,6 +7,21 @@
 #+DESCRIPTION:
 #+TITLE: CMake + Google micro-benchmarking
 
+* Updates 
+** Sun Dec 30 2018
+- https://github.com/google/benchmark/issues/564
+
+These lines have been added:
+#+BEGIN_SRC cmake 
+# Fix dependency download
+# https://github.com/google/benchmark/issues/564
+set(BENCHMARK_DOWNLOAD_DEPENDENCIES ON)
+#+END_SRC
+
+- https://github.com/ARM-software/ComputeLibrary/issues/198
+The deprecated ="benchmark/benchmark_api.h"= has been replaced by
+="benchmark/benchmark.h"=
+
 * Introduction
 This [[https://pixorblog.wordpress.com/2016/05/22/cmake-google-micro-benchmarking/][post]] describes a minimal example showing how to use *CMake* and the [[https://github.com/google/benchmark][google micro-benchmarking library]].
 
